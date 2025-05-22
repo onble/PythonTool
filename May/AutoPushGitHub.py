@@ -90,7 +90,7 @@ def run_git_command(command, show_output=True, critical=True):
             return None
     except subprocess.TimeoutExpired:
         logging.error(f"命令在120秒后超时。")
-        return Non
+        return None
     except Exception as e:
         logging.error(f"发生意外错误：{str(e)}")
         return None
