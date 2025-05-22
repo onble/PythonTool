@@ -71,8 +71,6 @@ def run_git_command(command, show_output=True, critical=True):
 
         if show_output and result.stdout:
             logging.info(f"命令输出:\n{result.stdout}")
-            if critical:
-                print(f"命令输出:\n{result.stdout}")
 
         return result.stdout or result
 
@@ -80,27 +78,21 @@ def run_git_command(command, show_output=True, critical=True):
         error_msg = e.stderr.strip()
         if "请求的上游分支" in error_msg:
             logging.error("错误：请求的上游分支不存在。尝试使用 'git push -u' 推送分支并配置上游关联。")
-            print("错误：请求的上游分支不存在。将尝试自动设置上游分支...")
             return None
         elif "unknown option" in error_msg and "--show-current" in error_msg:
             logging.error("错误：当前Git版本不支持 'git branch --show-current' 命令，已使用 'git rev-parse --abbrev-ref HEAD' 替代。")
             return None
         elif "Updates were rejected because" in error_msg:
             logging.error("错误：远程仓库有新的提交，需要先拉取再推送。")
-            print("错误：远程仓库有新的提交，正在尝试自动拉取...")
             return None
         else:
             logging.error(f"执行命令出错：{error_msg}")
-            if critical:
-                print(f"执行命令出错：{error_msg}", e)
             return None
     except subprocess.TimeoutExpired:
         logging.error(f"命令在120秒后超时。")
-        print(f"命令在120秒后超时。")
-        return None
+        return Non
     except Exception as e:
         logging.error(f"发生意外错误：{str(e)}")
-        print(f"发生意外错误：{str(e)}")
         return None
 
 
@@ -111,7 +103,6 @@ def get_current_branch():
     if branch:
         return branch.strip()
     logging.error("无法确定当前分支。请手动检查仓库的分支设置。")
-    print("无法确定当前分支。请手动检查仓库的分支设置。")
     return None
 
 
@@ -131,48 +122,40 @@ def handle_deleted_files():
         files = deleted_files.strip().split('\n')
         for file in files:
             run_git_command(f"git rm --cached {file}", show_output=False)
-        print(f"已处理 {len(files)} 个删除的文件")
         return True
     return False
 
 
 def auto_push():
-    print(f"开始git自动提交于 {datetime.now()}")
     logging.info(f"开始git自动提交于 {datetime.now()}")
 
     # 检查仓库目录是否存在
     if not os.path.exists(REPO_PATH):
         logging.error(f"错误：仓库路径 {REPO_PATH} 不存在。")
-        print(f"错误：仓库路径 {REPO_PATH} 不存在。")
         return
 
     # 检查远程仓库类型
     remote_output = run_git_command("git remote -v", show_output=False)
     if not remote_output:
         logging.error("错误：无法获取远程仓库信息。")
-        print("错误：无法获取远程仓库信息。")
         return
 
     # 统一使用SSH协议，简化检查逻辑
     if "git@github.com" not in remote_output:
         logging.error("错误：远程仓库未使用SSH协议。请切换到SSH协议。")
-        print("错误：远程仓库未使用SSH协议。请切换到SSH协议。")
         return
 
     # 检查SSH连接
     if not check_ssh_connection():
         logging.error("错误：SSH连接有问题，操作终止。")
-        print("错误：SSH连接有问题，操作终止。")
         return
 
     # 检查是否为git仓库
     if not os.path.exists(os.path.join(REPO_PATH, ".git")):
         logging.error(f"错误：{REPO_PATH} 不是一个Git仓库。")
-        print(f"错误：{REPO_PATH} 不是一个Git仓库。")
         return
 
     # 拉取最新变更（避免冲突）
-    print("正在拉取远程仓库最新变更...")
     run_git_command("git reset --hard HEAD && git stash clear && git pull --force origin main")
     # run_git_command("git fetch origin main && git merge -X theirs origin/main")
     # run_git_command("git pull --rebase origin main")
@@ -188,7 +171,6 @@ def auto_push():
     status = run_git_command("git status --porcelain", show_output=False)
     if not status:
         logging.info("没有需要提交的变更。")
-        print("没有需要提交的变更。")
         return
 
     # 处理已删除的文件
@@ -204,54 +186,40 @@ def auto_push():
     current_branch = get_current_branch()
     if not current_branch:
         logging.error("由于分支检测失败，无法设置上游分支。")
-        print("由于分支检测失败，无法设置上游分支。")
         return
 
-    print(f"当前分支: {current_branch}")
 
     # 推送变更
-    print(f"正在推送到 {GIT_BRANCH} 分支...")
     logging.info(f"正在推送到 {GIT_BRANCH} 分支...")
 
     # 尝试普通推送
     push_output = run_git_command(f"git push origin {current_branch}", critical=False)
-    print('push_output', push_output)
 
     if push_output:
-        print("推送成功！")
         logging.info("推送成功！")
     else:
         # 检查是否需要设置上游分支
         if needs_upstream_setting():
-            print("检测到需要设置上游分支，尝试使用 -u 选项...")
             push_output = run_git_command(f"git push -u origin {current_branch}")
             if push_output:
-                print("上游分支设置成功并推送完成！")
                 logging.info("上游分支设置成功并推送完成！")
             else:
                 # 最后尝试拉取并合并后再推送
-                print("尝试拉取远程变更并合并...")
                 run_git_command("git pull origin main")
                 push_output = run_git_command(f"git push origin {current_branch}")
                 if push_output:
-                    print("拉取合并后推送成功！")
                     logging.info("拉取合并后推送成功！")
                 else:
                     logging.error("推送失败。请检查之前的错误详情。")
-                    print("推送失败。请检查之前的错误详情。")
         else:
             # 最后尝试拉取并合并后再推送
-            print("尝试拉取远程变更并合并...")
             run_git_command("git pull origin main")
             push_output = run_git_command(f"git push origin {current_branch}")
             if push_output:
-                print("拉取合并后推送成功！")
                 logging.info("拉取合并后推送成功！")
             else:
                 logging.error("推送失败。请检查之前的错误详情。")
-                print("推送失败。请检查之前的错误详情。")
 
-    print("Git自动化完成。")
     logging.info("Git自动化完成。")
 
 
@@ -359,7 +327,6 @@ if __name__ == "__main__":
         pid = os.fork()
         if pid > 0:
             # 父进程退出
-            print(f"程序已在后台运行，PID: {pid}")
             exit(0)
         # 分离会话
         os.setsid()
