@@ -6,13 +6,6 @@ import time
 import random
 from typing import List
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='cache/git_automation.log'
-)
-
 # 配置信息
 REPO_PATH = "/root/code/weekendAutoPush"  # 替换为你的仓库路径
 COMMIT_MESSAGE = "自动提交于 {}".format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
@@ -188,7 +181,6 @@ def auto_push():
         logging.error("由于分支检测失败，无法设置上游分支。")
         return
 
-
     # 推送变更
     logging.info(f"正在推送到 {GIT_BRANCH} 分支...")
 
@@ -322,6 +314,12 @@ def run_daily():
 
 
 if __name__ == "__main__":
+    # 配置日志
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename='cache/git_automation.log'
+    )
     # 设置程序在后台运行
     try:
         pid = os.fork()
