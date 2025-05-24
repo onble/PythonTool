@@ -156,7 +156,7 @@ class Daemon:
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - PID:%(process)d - %(levelname)s - %(message)s',
-            filename='git_automation.log'
+            filename='cache/git_automation_daily.log'
         )
 
     def daemonize(self) -> None:

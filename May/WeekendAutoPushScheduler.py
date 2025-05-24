@@ -10,14 +10,9 @@ from AutoPushGitHub import auto_push
 
 
 class DailyRandomScheduler:
-    """每日随机时间任务调度器（新增初始化任务功能）"""
+    """周末随机时间任务调度器"""
 
     def __init__(self, start_hour: int = 9, end_hour: int = 21):
-        """
-        初始化调度器
-        :param start_hour: 开始小时数（包含）
-        :param end_hour: 结束小时数（包含）
-        """
         # 配置日志（已集成到守护进程）
         self.logger = logging.getLogger(__name__)
 
@@ -27,16 +22,22 @@ class DailyRandomScheduler:
         self._min_interval = timedelta(minutes=10)
         self._job_count_range = (1, 3)
         self._scheduled_jobs: List[schedule.Job] = []
-        self._initial_job: Optional[schedule.Job] = None  # 初始化任务引用
+        self._initial_job: Optional[schedule.Job] = None
 
         # 初始化每日任务
         self._schedule_daily_jobs()
-        # 安排启动后1分钟的初始化任务
+        # 安排启动后1分钟的初始化任务（仅在周末）
         self._schedule_initial_task()
+
+    def _is_weekend(self, dt: datetime) -> bool:
+        """判断日期是否为周末"""
+        return dt.weekday() in (5, 6)  # 5=Saturday, 6=Sunday
 
     def _schedule_initial_task(self) -> None:
         """安排启动后1分钟执行的初始化任务"""
-        initial_time = datetime.now() + timedelta(minutes=1)
+        current_time = datetime.now()
+
+        initial_time = current_time + timedelta(minutes=1)
         try:
             self._initial_job = schedule.every().day.at(
                 initial_time.strftime('%H:%M')
@@ -102,7 +103,16 @@ class DailyRandomScheduler:
         return [(datetime.combine(current_date, datetime.min.time()) + t).time() for t in time_slots]
 
     def _schedule_daily_jobs(self) -> None:
-        """安排每日任务"""
+        """安排每日任务（仅周末有效）"""
+        current_date = datetime.now()
+        if not self._is_weekend(current_date):
+            self.logger.info(f"今日是 {current_date.strftime('%A')}，非周末不安排任务")
+            # 清除可能存在的旧任务
+            for job in self._scheduled_jobs:
+                schedule.cancel_job(job)
+            self._scheduled_jobs.clear()
+            return
+
         # 清除旧任务
         for job in self._scheduled_jobs:
             schedule.cancel_job(job)
@@ -114,24 +124,24 @@ class DailyRandomScheduler:
             self.logger.error("未能生成有效时间槽")
             return
 
-        self.logger.info(f"今日计划执行时间：{[t.strftime('%H:%M') for t in time_slots]}")
+        self.logger.info(f"周末计划执行时间：{[t.strftime('%H:%M') for t in time_slots]}")
 
         # 安排每个任务
         for t in time_slots:
             job = schedule.every().day.at(t.strftime('%H:%M')).do(self._execute_work)
             self._scheduled_jobs.append(job)
 
-        # 安排次日任务重置
+        # 保持每日检查安排
         schedule.every().day.at("00:00").do(self._schedule_daily_jobs)
 
     def _execute_work(self) -> None:
         """执行工作任务"""
-        self.logger.info("开始执行日常工作...")
+        self.logger.info("开始执行周末工作...")
         try:
             auto_push()
-            self.logger.info("日常工作执行完成")
+            self.logger.info("周末工作执行完成")
         except Exception as e:
-            self.logger.error(f"日常工作执行失败：{str(e)}", exc_info=True)
+            self.logger.error(f"周末工作执行失败：{str(e)}", exc_info=True)
 
     def run(self) -> NoReturn:
         """启动调度器主循环"""
