@@ -177,7 +177,7 @@ def auto_push():
     # handle_deleted_files()
 
     # 添加所有变更（包括新文件和修改的文件）
-    run_git_command("git add.")
+    run_git_command("git add .")
 
     # 提交变更
     commit_output = run_git_command('git commit -m "{}"'.format(COMMIT_MESSAGE))

@@ -5,12 +5,12 @@ import os
 import sys
 import logging
 from datetime import datetime, timedelta
-from typing import NoReturn, List
+from typing import NoReturn, List, Optional
 from AutoPushGitHub import auto_push
 
 
 class DailyRandomScheduler:
-    """每日随机时间任务调度器"""
+    """每日随机时间任务调度器（新增初始化任务功能）"""
 
     def __init__(self, start_hour: int = 9, end_hour: int = 21):
         """
@@ -27,9 +27,37 @@ class DailyRandomScheduler:
         self._min_interval = timedelta(minutes=10)
         self._job_count_range = (1, 3)
         self._scheduled_jobs: List[schedule.Job] = []
+        self._initial_job: Optional[schedule.Job] = None  # 初始化任务引用
 
         # 初始化每日任务
         self._schedule_daily_jobs()
+        # 安排启动后1分钟的初始化任务
+        self._schedule_initial_task()
+
+    def _schedule_initial_task(self) -> None:
+        """安排启动后1分钟执行的初始化任务"""
+        initial_time = datetime.now() + timedelta(minutes=1)
+        try:
+            self._initial_job = schedule.every().day.at(
+                initial_time.strftime('%H:%M')
+            ).do(self._execute_initial_task)
+            self.logger.info(f"初始化任务安排在 {initial_time.strftime('%H:%M')} 执行")
+        except Exception as e:
+            self.logger.error(f"初始化任务安排失败: {str(e)}", exc_info=True)
+
+    def _execute_initial_task(self) -> None:
+        """执行初始化任务并自取消"""
+        self.logger.info("开始执行初始化任务...")
+        try:
+            auto_push()
+            self.logger.info("初始化任务执行成功")
+        except Exception as e:
+            self.logger.error(f"初始化任务执行失败: {str(e)}", exc_info=True)
+        finally:
+            if self._initial_job:
+                schedule.cancel_job(self._initial_job)
+                self.logger.info("已移除初始化任务调度")
+            self._initial_job = None
 
     def _generate_time_slots(self) -> List[datetime.time]:
         """生成符合条件的时间槽"""
@@ -98,16 +126,16 @@ class DailyRandomScheduler:
 
     def _execute_work(self) -> None:
         """执行工作任务"""
-        self.logger.info("开始执行工作任务...")
+        self.logger.info("开始执行日常工作...")
         try:
             auto_push()
-            self.logger.info("工作任务执行完成")
+            self.logger.info("日常工作执行完成")
         except Exception as e:
-            self.logger.error(f"任务执行失败：{str(e)}", exc_info=True)
+            self.logger.error(f"日常工作执行失败：{str(e)}", exc_info=True)
 
     def run(self) -> NoReturn:
         """启动调度器主循环"""
-        self.logger.info("调度器开始运行...")
+        self.logger.info("调度器进入主循环...")
         try:
             while True:
                 schedule.run_pending()
@@ -159,11 +187,6 @@ class Daemon:
         with open(self.pidfile, 'w') as f:
             f.write(str(os.getpid()))
         self.logger.info(f"守护进程启动，PID: {os.getpid()}")
-
-        # 关闭标准文件描述符
-        sys.stdin.close()
-        sys.stdout.close()
-        sys.stderr.close()
 
     def start(self) -> None:
         """启动守护进程"""
