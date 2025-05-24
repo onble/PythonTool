@@ -1,10 +1,7 @@
 ﻿import os
 import subprocess
-from datetime import datetime, timedelta  # 导入 datetime 类和 timedelta 类
+from datetime import datetime
 import logging
-import time
-import random
-from typing import List
 
 # 配置信息
 REPO_PATH = "/root/code/weekendAutoPush"  # 替换为你的仓库路径
@@ -219,120 +216,6 @@ def my_test():
     pass
 
 
-def is_weekend() -> bool:
-    """判断今天是否是周末"""
-    today = datetime.now().weekday()
-    return today >= 5  # 5是周六，6是周日
-
-
-def generate_random_times() -> List[datetime]:
-    """
-    生成随机执行时间
-    返回: 随机时间列表
-    """
-    # 今天的9点和21点
-    now = datetime.now()
-    start_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
-    end_time = now.replace(hour=21, minute=0, second=0, microsecond=0)
-
-    # 如果9点已过，则从明天开始
-    if now > start_time:
-        start_time = start_time + timedelta(days=1)
-        end_time = end_time + timedelta(days=1)
-
-    # 随机确定执行次数
-    count = random.randint(1, 3)
-
-    # 生成随机时间（秒数）
-    delta_seconds = (end_time - start_time).total_seconds()
-    interval_min = 10 * 60  # 10分钟的秒数
-
-    # 生成不重叠的随机时间
-    times = []
-    while len(times) < count:
-        # 生成一个随机时间点
-        random_second = random.randint(0, int(delta_seconds))
-        random_time = start_time + timedelta(seconds=random_second)
-
-        # 检查是否与已有时间间隔足够
-        if all(abs((random_time - t).total_seconds()) >= interval_min for t in times):
-            times.append(random_time)
-
-    # 按时间排序
-    times.sort()
-    return times
-
-
-def run_once(target_time: datetime):
-    """等待并执行一次任务"""
-    now = datetime.now()
-    wait_seconds = (target_time - now).total_seconds()
-
-    if wait_seconds <= 0:
-        logging.warning(f"目标时间已过: {target_time}")
-        return
-
-    logging.info(f"等待 {wait_seconds:.2f} 秒后执行任务")
-    time.sleep(wait_seconds)
-
-    # 执行任务
-    auto_push()
-
-
-def run_daily():
-    """每天运行的主循环"""
-    logging.info("程序启动，开始每日调度")
-
-    while True:
-        try:
-            # 今天是否是周末
-            weekend = is_weekend()
-            logging.info(f"今日是否周末: {weekend}")
-
-            if weekend:
-                # 生成今天的随机时间
-                times = generate_random_times()
-                logging.info(f"生成的执行时间: {[t.strftime('%Y-%m-%d %H:%M:%S') for t in times]}")
-
-                # 执行今天的所有任务
-                for target_time in times:
-                    run_once(target_time)
-
-            # 等待到第二天的9点
-            now = datetime.now()
-            tomorrow = now + timedelta(days=1)
-            next_start = tomorrow.replace(hour=9, minute=0, second=0, microsecond=0)
-            wait_seconds = (next_start - now).total_seconds()
-
-            logging.info(f"今日任务执行完毕，等待 {wait_seconds / 3600:.2f} 小时到次日9点")
-            time.sleep(wait_seconds)
-
-        except Exception as e:
-            logging.error(f"发生错误: {str(e)}")
-            # 等待一段时间再重试
-            time.sleep(60)
-
-
 if __name__ == "__main__":
     # 配置日志
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        filename='cache/git_automation.log'
-    )
-    # 设置程序在后台运行
-    try:
-        pid = os.fork()
-        if pid > 0:
-            # 父进程退出
-            exit(0)
-        # 分离会话
-        os.setsid()
-        # 执行主循环
-        run_daily()
-        # 捕获异常
-    except OSError:
-        logging.error("创建子进程失败")
-        exit(1)
-    except Exception as e:
-        logging.error(f"发生错误: {str(e)}")
+    pass
