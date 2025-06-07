@@ -2,220 +2,213 @@
 import subprocess
 from datetime import datetime
 import logging
+from typing import Optional, Tuple
 
-# 配置信息
-REPO_PATH = "/root/code/weekendAutoPush"  # 替换为你的仓库路径
-COMMIT_MESSAGE = "自动提交于 {}".format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-GIT_BRANCH = "main"  # 替换为你的分支名
+# 通用配置
+COMMIT_MESSAGE_TEMPLATE = "自动提交于 {}"
+GIT_BRANCH = "main"
 GITHUB_HOST = "github.com"
 
 
-def check_ssh_connection():
-    """检查SSH连接是否正常"""
-    logging.info(f"正在检查与 {GITHUB_HOST} 的SSH连接...")
+class GitAutoPusher:
+    """Git自动推送工具类"""
 
-    try:
-        # 尝试SSH连接测试
-        cmd = f"ssh -T git@{GITHUB_HOST} 2>&1"
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            timeout=10
-        )
+    def __init__(self, repo_path: str):
+        """
+        初始化推送器
+        :param repo_path: Git仓库本地路径
+        """
+        self.repo_path = os.path.expanduser(repo_path)
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self._validate_path()
 
-        # 检查输出中是否包含成功信息
-        if "Hi" in result.stdout:
-            logging.info(f"与 {GITHUB_HOST} 的SSH连接成功")
-            return True
-        else:
-            logging.error(f"SSH连接失败: {result.stdout}")
+    def _validate_path(self) -> None:
+        """验证仓库路径有效性"""
+        if not os.path.exists(self.repo_path):
+            raise ValueError(f"仓库路径 {self.repo_path} 不存在")
+        if not os.path.exists(os.path.join(self.repo_path, ".git")):
+            raise ValueError(f"{self.repo_path} 不是一个Git仓库")
+
+    def _run_git_command(self, command: str, show_output: bool = True) -> Optional[str]:
+        """
+        执行Git命令
+        :param command: 完整的git命令字符串
+        :param show_output: 是否在日志中显示输出
+        :return: 命令输出内容或None
+        """
+        self.logger.info(f"执行Git命令: {command}")
+
+        try:
+            result = subprocess.run(
+                command,
+                cwd=self.repo_path,
+                shell=True,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                timeout=120
+            )
+
+            if show_output and result.stdout:
+                self.logger.info(f"命令输出:\n{result.stdout}")
+
+            return result.stdout or None
+
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip()
+            self._handle_git_error(error_msg)
+            return None
+        except subprocess.TimeoutExpired:
+            self.logger.error("命令执行超时（120秒）")
+            return None
+        except Exception as e:
+            self.logger.error(f"意外错误: {str(e)}", exc_info=True)
+            return None
+
+    def _handle_git_error(self, error_msg: str) -> None:
+        """处理常见的Git错误"""
+        error_handlers = {
+            "请求的上游分支": lambda: self.logger.error("错误：上游分支不存在，尝试使用 'git push -u'"),
+            "unknown option": lambda: self.logger.error("错误：Git版本不兼容，已使用备用命令"),
+            "Updates were rejected": lambda: self.logger.error("错误：远程有更新，需先拉取")
+        }
+
+        for key, handler in error_handlers.items():
+            if key in error_msg:
+                handler()
+                return
+        self.logger.error(f"Git错误: {error_msg}")
+
+    def check_ssh_connection(self) -> bool:
+        """检查SSH连接状态"""
+        self.logger.info(f"检查与 {GITHUB_HOST} 的SSH连接...")
+
+        try:
+            result = subprocess.run(
+                f"ssh -T git@{GITHUB_HOST}",
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                timeout=10
+            )
+
+            if "Hi" in result.stdout:
+                self.logger.info("SSH连接验证成功")
+                return True
+            self.logger.error(f"SSH连接失败: {result.stdout}")
+            return False
+        except Exception as e:
+            self.logger.error(f"SSH检查异常: {str(e)}")
             return False
 
-    except subprocess.TimeoutExpired:
-        logging.error(f"检查与 {GITHUB_HOST} 的SSH连接时超时")
-        return False
-    except Exception as e:
-        logging.error(f"检查SSH连接时出错: {str(e)}")
-        return False
+    def _get_current_branch(self) -> Optional[str]:
+        """获取当前分支名称"""
+        branch = self._run_git_command("git rev-parse --abbrev-ref HEAD", show_output=False)
+        return branch.strip() if branch else None
+
+    def _needs_upstream(self) -> bool:
+        """检查是否需要设置上游分支"""
+        status = self._run_git_command("git status -sb", show_output=False)
+        return bool(status and "[no upstream branch]" in status)
+
+    def _handle_deleted_files(self) -> bool:
+        """处理已删除文件的跟踪"""
+        deleted = self._run_git_command("git ls-files --deleted", show_output=False)
+        if not deleted:
+            return False
+
+        for f in deleted.strip().split('\n'):
+            self._run_git_command(f"git rm --cached {f}")
+        return True
+
+    def _generate_commit_message(self) -> str:
+        """生成带时间戳的提交信息"""
+        return COMMIT_MESSAGE_TEMPLATE.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+    def _create_timestamp_file(self) -> str:
+        """创建时间戳文件"""
+        filename = os.path.join(self.repo_path, f"{datetime.now().strftime('%Y%m%d%H%M%S')}.txt")
+        with open(filename, 'w') as f:
+            pass
+        return filename
+
+    def execute_push_flow(self) -> Tuple[bool, str]:
+        """
+        执行完整的推送流程
+        :return: (是否成功, 结果描述)
+        """
+        # 前置检查
+        if not self.check_ssh_connection():
+            return False, "SSH连接失败"
+
+        # 创建时间戳文件
+        try:
+            self._create_timestamp_file()
+        except Exception as e:
+            self.logger.error(f"创建文件失败: {str(e)}")
+            return False, "文件创建失败"
+
+        # 拉取最新代码
+        if not self._run_git_command("git reset --hard HEAD && git stash clear && git pull --force origin main"):
+            return False, "代码拉取失败"
+
+        # 处理变更
+        self._handle_deleted_files()
+        self._run_git_command("git add .")
+
+        # 提交变更
+        commit_msg = self._generate_commit_message()
+        if not self._run_git_command(f'git commit -m "{commit_msg}"'):
+            return False, "提交失败"
+
+        # 推送变更
+        branch = self._get_current_branch()
+        if not branch:
+            return False, "分支获取失败"
+
+        self._attempt_push(branch)
+        return True, "推送结束"
+
+    def _attempt_push(self, branch: str) -> None:
+        """尝试多种推送方式"""
+        # 首次推送尝试
+        if self._run_git_command(f"git push origin {branch}"):
+            return
+
+        # 处理上游分支设置
+        if self._needs_upstream():
+            self._run_git_command(f"git push -u origin {branch}")
+            return
+
+        # 最终尝试拉取合并后推送
+        self._run_git_command("git pull origin main")
+        self._run_git_command(f"git push origin {branch}")
+        return
 
 
-def run_git_command(command, show_output=True, critical=True):
-    """执行Git命令并返回输出"""
-    logging.info(f"正在执行Git命令: {command}")
+def auto_push(repo_path: str) -> None:
+    """
+    自动推送入口函数
+    :param repo_path: Git仓库本地路径
+    """
+    logging.info(f"启动Git自动推送流程于 {repo_path}")
 
     try:
-        # 执行命令
-        result = subprocess.run(
-            command,
-            cwd=REPO_PATH,
-            shell=True,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            timeout=120  # 设置超时时间，避免无限等待
-        )
-
-        if show_output and result.stdout:
-            logging.info(f"命令输出:\n{result.stdout}")
-
-        return result.stdout or result
-
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.strip()
-        if "请求的上游分支" in error_msg:
-            logging.error("错误：请求的上游分支不存在。尝试使用 'git push -u' 推送分支并配置上游关联。")
-            return None
-        elif "unknown option" in error_msg and "--show-current" in error_msg:
-            logging.error("错误：当前Git版本不支持 'git branch --show-current' 命令，已使用 'git rev-parse --abbrev-ref HEAD' 替代。")
-            return None
-        elif "Updates were rejected because" in error_msg:
-            logging.error("错误：远程仓库有新的提交，需要先拉取再推送。")
-            return None
-        else:
-            logging.error(f"执行命令出错：{error_msg}")
-            return None
-    except subprocess.TimeoutExpired:
-        logging.error(f"命令在120秒后超时。")
-        return None
+        pusher = GitAutoPusher(repo_path)
+        success, message = pusher.execute_push_flow()
+        logging.info(f"推送结果: {message}" if success else f"推送失败: {message}")
+    except ValueError as e:
+        logging.error(str(e))
     except Exception as e:
-        logging.error(f"发生意外错误：{str(e)}")
-        return None
-
-
-def get_current_branch():
-    """获取当前分支名，兼容旧版本Git"""
-    logging.info("使用 'git rev-parse --abbrev-ref HEAD' 获取当前分支。")
-    branch = run_git_command("git rev-parse --abbrev-ref HEAD", show_output=False)
-    if branch:
-        return branch.strip()
-    logging.error("无法确定当前分支。请手动检查仓库的分支设置。")
-    return None
-
-
-def needs_upstream_setting():
-    """检查是否需要设置上游分支"""
-    status = run_git_command("git status -sb", show_output=False)
-    if status and "[no upstream branch]" in status:
-        return True
-    return False
-
-
-def handle_deleted_files():
-    """处理已删除的文件，确保Git跟踪这些删除"""
-    logging.info("检查并处理已删除的文件...")
-    deleted_files = run_git_command("git ls-files --deleted", show_output=False)
-    if deleted_files:
-        files = deleted_files.strip().split('\n')
-        for file in files:
-            run_git_command(f"git rm --cached {file}", show_output=False)
-        return True
-    return False
-
-
-def auto_push():
-    logging.info(f"开始git自动提交于 {datetime.now()}")
-
-    # 检查仓库目录是否存在
-    if not os.path.exists(REPO_PATH):
-        logging.error(f"错误：仓库路径 {REPO_PATH} 不存在。")
-        return
-
-    # 检查远程仓库类型
-    remote_output = run_git_command("git remote -v", show_output=False)
-    if not remote_output:
-        logging.error("错误：无法获取远程仓库信息。")
-        return
-
-    # 统一使用SSH协议，简化检查逻辑
-    if "git@github.com" not in remote_output:
-        logging.error("错误：远程仓库未使用SSH协议。请切换到SSH协议。")
-        return
-
-    # 检查SSH连接
-    if not check_ssh_connection():
-        logging.error("错误：SSH连接有问题，操作终止。")
-        return
-
-    # 检查是否为git仓库
-    if not os.path.exists(os.path.join(REPO_PATH, ".git")):
-        logging.error(f"错误：{REPO_PATH} 不是一个Git仓库。")
-        return
-
-    # 拉取最新变更（避免冲突）
-    run_git_command("git reset --hard HEAD && git stash clear && git pull --force origin main")
-    # run_git_command("git fetch origin main && git merge -X theirs origin/main")
-    # run_git_command("git pull --rebase origin main")
-    # run_git_command("git pull origin main")
-
-    # 创建以当前时间命名的txt文件
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    file_name = os.path.join(REPO_PATH, f"{current_time}.txt")
-    with open(file_name, 'w') as f:
-        pass
-
-    # 检查仓库是否有变更
-    status = run_git_command("git status --porcelain", show_output=False)
-    if not status:
-        logging.info("没有需要提交的变更。")
-        return
-
-    # 处理已删除的文件
-    # handle_deleted_files()
-
-    # 添加所有变更（包括新文件和修改的文件）
-    run_git_command("git add .")
-
-    # 提交变更
-    commit_output = run_git_command('git commit -m "{}"'.format(COMMIT_MESSAGE))
-
-    # 获取当前分支
-    current_branch = get_current_branch()
-    if not current_branch:
-        logging.error("由于分支检测失败，无法设置上游分支。")
-        return
-
-    # 推送变更
-    logging.info(f"正在推送到 {GIT_BRANCH} 分支...")
-
-    # 尝试普通推送
-    push_output = run_git_command(f"git push origin {current_branch}", critical=False)
-
-    if push_output:
-        logging.info("推送成功！")
-    else:
-        # 检查是否需要设置上游分支
-        if needs_upstream_setting():
-            push_output = run_git_command(f"git push -u origin {current_branch}")
-            if push_output:
-                logging.info("上游分支设置成功并推送完成！")
-            else:
-                # 最后尝试拉取并合并后再推送
-                run_git_command("git pull origin main")
-                push_output = run_git_command(f"git push origin {current_branch}")
-                if push_output:
-                    logging.info("拉取合并后推送成功！")
-                else:
-                    logging.error("推送失败。请检查之前的错误详情。")
-        else:
-            # 最后尝试拉取并合并后再推送
-            run_git_command("git pull origin main")
-            push_output = run_git_command(f"git push origin {current_branch}")
-            if push_output:
-                logging.info("拉取合并后推送成功！")
-            else:
-                logging.error("推送失败。请检查之前的错误详情。")
-
-    logging.info("Git自动化完成。")
-
-
-def my_test():
-    pass
+        logging.error(f"自动推送异常: {str(e)}", exc_info=True)
 
 
 if __name__ == "__main__":
-    # 配置日志
-    pass
+    # 使用示例
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    auto_push("/root/code/weekendAutoPush")  # 在此传入仓库路径

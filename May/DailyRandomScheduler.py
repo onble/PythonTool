@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from typing import NoReturn, List, Optional
 from AutoPushGitHub import auto_push
 
+PROJECT_PATH = '/root/code/everydayAutoPush'
+
 
 class DailyRandomScheduler:
     """每日随机时间任务调度器（新增初始化任务功能）"""
@@ -49,7 +51,7 @@ class DailyRandomScheduler:
         """执行初始化任务并自取消"""
         self.logger.info("开始执行初始化任务...")
         try:
-            auto_push()
+            auto_push(PROJECT_PATH)
             self.logger.info("初始化任务执行成功")
         except Exception as e:
             self.logger.error(f"初始化任务执行失败: {str(e)}", exc_info=True)
@@ -128,7 +130,7 @@ class DailyRandomScheduler:
         """执行工作任务"""
         self.logger.info("开始执行日常工作...")
         try:
-            auto_push()
+            auto_push(PROJECT_PATH)
             self.logger.info("日常工作执行完成")
         except Exception as e:
             self.logger.error(f"日常工作执行失败：{str(e)}", exc_info=True)
@@ -148,7 +150,7 @@ class DailyRandomScheduler:
 class Daemon:
     """Linux守护进程实现"""
 
-    def __init__(self, pidfile: str = '/cache/git_automation_daily.pid'):
+    def __init__(self, pidfile: str = '../cache/git_automation_daily.pid'):
         self.pidfile = pidfile
         self.logger = logging.getLogger(__name__)
 
@@ -156,7 +158,7 @@ class Daemon:
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - PID:%(process)d - %(levelname)s - %(message)s',
-            filename='cache/git_automation_daily.log'
+            filename='../cache/git_automation_daily.log'
         )
 
     def daemonize(self) -> None:
