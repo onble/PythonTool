@@ -160,7 +160,7 @@ class DailyRandomScheduler:
 class Daemon:
     """Linux守护进程实现"""
 
-    def __init__(self, pidfile: str = '../cache/git_automation_weekend.pid'):
+    def __init__(self, pidfile: str = '/root/cache/git_automation_weekend.pid'):
         self.pidfile = pidfile
         self.logger = logging.getLogger(__name__)
 
@@ -168,7 +168,7 @@ class Daemon:
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - PID:%(process)d - %(levelname)s - %(message)s',
-            filename='../cache/git_automation_weekend.log'
+            filename='/root/cache/git_automation_weekend.log'
         )
 
     def daemonize(self) -> None:

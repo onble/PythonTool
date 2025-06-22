@@ -9,6 +9,8 @@ from typing import NoReturn, List, Optional
 from AutoPushGitHub import auto_push
 
 PROJECT_PATH = '/root/code/everydayAutoPush'
+LOG_FILE_PATH = '/root/cache/git_automation_daily.log'  # 日志文件路径
+MAX_LOG_SIZE = 2 * 1024 * 1024  # 2MB
 
 
 class DailyRandomScheduler:
@@ -51,6 +53,8 @@ class DailyRandomScheduler:
         """执行初始化任务并自取消"""
         self.logger.info("开始执行初始化任务...")
         try:
+            # 执行前检查并清理日志
+            self._check_and_clean_log()
             auto_push(PROJECT_PATH)
             self.logger.info("初始化任务执行成功")
         except Exception as e:
@@ -130,10 +134,38 @@ class DailyRandomScheduler:
         """执行工作任务"""
         self.logger.info("开始执行日常工作...")
         try:
+            # 执行前检查并清理日志
+            self._check_and_clean_log()
             auto_push(PROJECT_PATH)
             self.logger.info("日常工作执行完成")
         except Exception as e:
             self.logger.error(f"日常工作执行失败：{str(e)}", exc_info=True)
+
+    def _check_and_clean_log(self) -> None:
+        """检查并清理日志文件"""
+        try:
+            if os.path.exists(LOG_FILE_PATH):
+                file_size = os.path.getsize(LOG_FILE_PATH)
+                if file_size > MAX_LOG_SIZE:
+                    self.logger.info(f"日志文件大小为 {file_size} 字节，超过 {MAX_LOG_SIZE} 字节，准备清理")
+
+                    with open(LOG_FILE_PATH, 'r') as f:
+                        lines = f.readlines()
+
+                    if len(lines) > 1:  # 确保至少保留一行
+                        half = len(lines) // 2
+                        remaining_lines = lines[half:]
+
+                        with open(LOG_FILE_PATH, 'w') as f:
+                            f.writelines(remaining_lines)
+
+                        self.logger.info(f"已删除 {half} 行日志，保留 {len(remaining_lines)} 行")
+                    else:
+                        self.logger.info("日志文件行数不足，跳过清理")
+            else:
+                self.logger.info("日志文件不存在，跳过检查")
+        except Exception as e:
+            self.logger.error(f"日志检查/清理失败: {str(e)}", exc_info=True)
 
     def run(self) -> NoReturn:
         """启动调度器主循环"""
@@ -150,7 +182,7 @@ class DailyRandomScheduler:
 class Daemon:
     """Linux守护进程实现"""
 
-    def __init__(self, pidfile: str = '../cache/git_automation_daily.pid'):
+    def __init__(self, pidfile: str = '/root/cache/git_automation_daily.pid'):
         self.pidfile = pidfile
         self.logger = logging.getLogger(__name__)
 
@@ -158,7 +190,7 @@ class Daemon:
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - PID:%(process)d - %(levelname)s - %(message)s',
-            filename='../cache/git_automation_daily.log'
+            filename=LOG_FILE_PATH
         )
 
     def daemonize(self) -> None:
@@ -196,8 +228,37 @@ class Daemon:
             self.logger.error("进程已在运行中")
             sys.exit(1)
 
+        # 启动前检查并清理日志
+        self._check_and_clean_log()
+
         self.daemonize()
         DailyRandomScheduler().run()
+
+    def _check_and_clean_log(self) -> None:
+        """检查并清理日志文件"""
+        try:
+            if os.path.exists(LOG_FILE_PATH):
+                file_size = os.path.getsize(LOG_FILE_PATH)
+                if file_size > MAX_LOG_SIZE:
+                    self.logger.info(f"日志文件大小为 {file_size} 字节，超过 {MAX_LOG_SIZE} 字节，准备清理")
+
+                    with open(LOG_FILE_PATH, 'r') as f:
+                        lines = f.readlines()
+
+                    if len(lines) > 1:  # 确保至少保留一行
+                        half = len(lines) // 2
+                        remaining_lines = lines[half:]
+
+                        with open(LOG_FILE_PATH, 'w') as f:
+                            f.writelines(remaining_lines)
+
+                        self.logger.info(f"已删除 {half} 行日志，保留 {len(remaining_lines)} 行")
+                    else:
+                        self.logger.info("日志文件行数不足，跳过清理")
+            else:
+                self.logger.info("日志文件不存在，跳过检查")
+        except Exception as e:
+            self.logger.error(f"日志检查/清理失败: {str(e)}", exc_info=True)
 
     def _is_running(self) -> bool:
         """检查进程是否正在运行"""
