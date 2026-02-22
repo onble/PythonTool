@@ -5,6 +5,10 @@ import logging
 import subprocess
 import time
 import requests
+import hmac
+import hashlib
+import base64
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Tuple
 
@@ -38,6 +42,17 @@ def send_dingtalk(msg: str):
         logger.info("未配置钉钉机器人，跳过通知")
         return
     try:
+        # 加签逻辑（替换成你的机器人密钥）
+        secret = "你的机器人加签密钥"  # 机器人设置页复制的密钥
+        timestamp = str(round(time.time() * 1000))
+        secret_enc = secret.encode('utf-8')
+        string_to_sign = f"{timestamp}\n{secret}"
+        string_to_sign_enc = string_to_sign.encode('utf-8')
+        hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+        sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+        # 拼接加签后的Webhook
+        webhook = f"{DINGTALK_WEBHOOK}&timestamp={timestamp}&sign={sign}"
+
         data = {
             "msgtype": "text",
             "text": {
@@ -45,7 +60,7 @@ def send_dingtalk(msg: str):
             }
         }
         headers = {"Content-Type": "application/json"}
-        requests.post(DINGTALK_WEBHOOK, json=data, headers=headers, timeout=10)
+        requests.post(webhook, json=data, headers=headers, timeout=10)
         logger.info("钉钉通知已发送")
     except Exception as e:
         logger.error(f"钉钉发送失败: {e}")
@@ -118,9 +133,9 @@ def main():
     logger.info(f"结果：{msg}")
 
     # 4. 发钉钉
-    # title = "✅ 发钉钉Git自动推送成功" if ok else "❌ Git自动推送失败"
-    # content = f"{title}\n时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n结果：{msg}"
-    # send_dingtalk(content)
+    title = "✅ 发钉钉Git自动推送成功" if ok else "❌ Git自动推送失败"
+    content = f"{title}\n时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n结果：{msg}"
+    send_dingtalk(content)
 
 if __name__ == "__main__":
     main()
